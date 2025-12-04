@@ -1,0 +1,16 @@
+﻿[*.cs]
+
+# IDE0042: Deconstruct variable declaration
+dotnet_diagnostic.IDE0042.severity = none
+
+# IDE0066: Convert switch statement to expression
+dotnet_diagnostic.IDE0066.severity = none
+
+# IDE0305: Simplify collection initialization
+dotnet_diagnostic.IDE0305.severity = none
+
+# CA1069: Enums values should not be duplicated
+dotnet_diagnostic.CA1069.severity = none
+
+# IDE0057: Use range operator
+dotnet_diagnostic.IDE0057.severity = none
