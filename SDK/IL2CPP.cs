@@ -51,15 +51,14 @@ namespace LoneEftDumper.SDK
             ulong sig = Memory.Vmm.FindSignature(PID, pattern, start, end);
             sig.ThrowIfInvalidUserVA(nameof(sig));
 
-            const ulong movOpcodeOffset = 12;
-            const ulong dispOffset = movOpcodeOffset + 3;
+            const uint movOpcodeOffset = 12;
+            const uint dispOffset = movOpcodeOffset + 3;
 
             int disp32 = Read<int>(sig + dispOffset);
-
-            ulong movInstruction = sig + movOpcodeOffset;
-            ulong typeDefPtrAddr = (movInstruction + 7) + (ulong)disp32;
+            ulong typeDefPtrAddr = sig.AddRVA(movOpcodeOffset + 3 + 4, disp32);
 
             ulong typeDefs = Read<ulong>(typeDefPtrAddr);
+            typeDefs.ThrowIfInvalidUserVA(nameof(typeDefs));
 
             Console.WriteLine($"Found TypeDefs @ 0x{typeDefs:X}");
             return typeDefs;
