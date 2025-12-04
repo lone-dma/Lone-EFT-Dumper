@@ -1,6 +1,4 @@
 ﻿using LoneEftDumper.SDK;
-using System;
-using System.Collections.Generic;
 using System.Text;
 
 namespace LoneEftDumper
@@ -16,7 +14,7 @@ namespace LoneEftDumper
             sb.AppendLine("https://github.com/lone-dma/Lone-EFT-Dumper");
             sb.AppendLine();
 
-            var klasses = IL2CPP.Class.GetTypeTable();
+            var klasses = GetClasses();
             Console.WriteLine($"Found {klasses.Count} classes. Processing...");
 
             int processedCount = 0;
@@ -55,7 +53,7 @@ namespace LoneEftDumper
                             // Namespace read failed, continue without it
                         }
                     }
-                    
+
                     // Get parent type name
                     string parentTypeName = "object";
                     try
@@ -115,7 +113,7 @@ namespace LoneEftDumper
 
                                     // Format offset as hex with leading zeros
                                     string offsetHex = $"{field.offset:X2}";
-                                    
+
                                     // Append field line with proper indentation
                                     sb.AppendLine($"    [{offsetHex}] {fieldName} : {fieldTypeName}");
                                 }
@@ -152,6 +150,21 @@ namespace LoneEftDumper
             Console.WriteLine($"  - Skipped (exceptions): {skippedExceptions}");
             Console.WriteLine($"  - Total: {klasses.Count}");
             Console.WriteLine($"  - Output: {outputPath}");
+        }
+
+        private static IReadOnlyList<IL2CPP.Class> GetClasses()
+        {
+            try
+            {
+                return IL2CPP.Class.GetTypeTable(); // Method 1
+            }
+            catch // Method 2
+            {
+                var assemblies = IL2CPP.Assembly.GetAllAssemblies();
+                var asm = assemblies.First(a => a.GetImage().GetName() == "Assembly-CSharp.dll");
+                var image = asm.GetImage();
+                return image.GetAllClasses();
+            }
         }
     }
 }

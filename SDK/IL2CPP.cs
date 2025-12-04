@@ -13,6 +13,8 @@ namespace LoneEftDumper.SDK
     internal static class IL2CPP
     {
         private static int gTypeCount;
+        private static ulong gAssembliesStart;
+        private static ulong gAssembliesEnd;
         private static ulong gTypeInfoDefinitionTable;
         private static ulong gMetadataGlobalHeader;
         private static ulong gGlobalMetadata;
@@ -22,45 +24,83 @@ namespace LoneEftDumper.SDK
             Console.WriteLine("Initializing IL2CPP SDK...");
             if (!Memory.Vmm.Map_GetModuleFromName(PID, "GameAssembly.dll", out var module))
                 throw new InvalidOperationException("Could not find GameAssembly.dll module in target process.");
+            if (Memory.Vmm.Map_GetEAT(PID, "GameAssembly.dll", out _) is not Vmm.EATEntry[] eat || eat.Length == 0)
+                throw new InvalidOperationException("Could not get GameAssembly.dll export table.");
 
-            gMetadataGlobalHeader = 0;
-            gGlobalMetadata = 0;
-
-            gTypeInfoDefinitionTable = GetTypeInfoDefinitionTable(ref module);
-            gTypeInfoDefinitionTable.ThrowIfInvalidUserVA(nameof(gTypeInfoDefinitionTable));
-            gTypeCount = Memory.Read<int>(gTypeInfoDefinitionTable - 0x10) / 8;
-            ArgumentOutOfRangeException.ThrowIfLessThan(gTypeCount, 1, nameof(gTypeCount));
-            ArgumentOutOfRangeException.ThrowIfGreaterThan(gTypeCount, 100000, nameof(gTypeCount));
+            Resolve_GlobalMetadata(ref module, eat);
+            Resolve_DomainAssemblies(ref module, eat);
+            Resolve_TypeInfoDefinitionTable(ref module, eat);
 
             Console.WriteLine("IL2CPP SDK Initialized.");
         }
 
-        private static ulong GetTypeInfoDefinitionTable(ref Vmm.ModuleEntry module)
+        private static void Resolve_GlobalMetadata(ref Vmm.ModuleEntry module, Vmm.EATEntry[] eat)
         {
-            // See: https://github.com/vmexit-invalid/il2cpp_dma_eft/blob/a37c8359a7e1bab31f282195e9595f7bbbe910fd/il2cpp_dumper_dma/src/il2cpp_dumper.cpp#L43
-            // I don't think we need to loop exports though, someone correct me if i'm wrong
+            // TODO
+            gGlobalMetadata = 0;
+            gMetadataGlobalHeader = 0;
+        }
 
-            // .text: 00000000004D2584                shr rcx, 4
-            // .text:00000000004D2588                 mov edx, 8
-            // .text:00000000004D258D                 call r8; loc_5A728C
-            // .text:00000000004D2590                 mov cs:qword_69F6B38, rax
-            // .text:00000000004D2597                 mov rax, cs:qword_69F68B8
-            const string pattern = "48 C1 E9 04 BA 08 00 00 00 ?? ?? ?? 48 89 05 ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ??";
+        private static void Resolve_DomainAssemblies(ref Vmm.ModuleEntry module, Vmm.EATEntry[] eat)
+        {
+            try
+            {
+                var export = eat.First(e => e.sFunction == "il2cpp_domain_get_assemblies");
+                // 48 8B 05 ?? ?? ?? ??    mov rax, [rip+disp32]
+                //                         // rax = assemblies_end
+                // 48 2B 05 ?? ?? ?? ??    sub rax, [rip+disp32]
+                //                         // rip+disp32 = assemblies_start
+                int disp32 = Read<int>(export.vaFunction + 3);
+                ulong assembliesEndPtr = export.vaFunction.AddRVA(3 + 4, disp32);
+                disp32 = Read<int>(export.vaFunction + 10);
+                ulong assembliesStartPtr = export.vaFunction.AddRVA(7 + 3 + 4, disp32);
+                gAssembliesStart = Read<ulong>(assembliesStartPtr);
+                gAssembliesEnd = Read<ulong>(assembliesEndPtr);
+                gAssembliesStart.ThrowIfInvalidUserVA(nameof(gAssembliesStart));
+                gAssembliesEnd.ThrowIfInvalidUserVA(nameof(gAssembliesEnd));
+                Console.WriteLine($"{nameof(gAssembliesStart)} @ 0x{gAssembliesStart:X}");
+                Console.WriteLine($"{nameof(gAssembliesEnd)} @ 0x{gAssembliesEnd:X}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"WARNING - Unable to resolve Domain Assemblies: {ex}");
+            }
+        }
 
-            ulong sig = Memory.Vmm.FindSignature(PID, pattern, module.vaBase, module.vaBase + module.cbImageSize);
-            sig.ThrowIfInvalidUserVA(nameof(sig));
+        private static void Resolve_TypeInfoDefinitionTable(ref Vmm.ModuleEntry module, Vmm.EATEntry[] eat)
+        {
+            try
+            {
+                // See: https://github.com/vmexit-invalid/il2cpp_dma_eft/blob/a37c8359a7e1bab31f282195e9595f7bbbe910fd/il2cpp_dumper_dma/src/il2cpp_dumper.cpp#L43
+                // I don't think we need to loop exports though, someone correct me if i'm wrong
 
-            const uint movOpcodeOffset = 12;
-            const uint dispOffset = movOpcodeOffset + 3;
+                // .text: 00000000004D2584                shr rcx, 4
+                // .text:00000000004D2588                 mov edx, 8
+                // .text:00000000004D258D                 call r8; loc_5A728C
+                // .text:00000000004D2590                 mov cs:qword_69F6B38, rax
+                // .text:00000000004D2597                 mov rax, cs:qword_69F68B8
+                const string pattern = "48 C1 E9 04 BA 08 00 00 00 ?? ?? ?? 48 89 05 ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ??";
 
-            int disp32 = Read<int>(sig + dispOffset);
-            ulong typeDefPtrAddr = sig.AddRVA(movOpcodeOffset + 3 + 4, disp32);
+                ulong sig = Memory.Vmm.FindSignature(PID, pattern, module.vaBase, module.vaBase + module.cbImageSize);
+                sig.ThrowIfInvalidUserVA(nameof(sig));
 
-            ulong typeDefs = Read<ulong>(typeDefPtrAddr);
-            typeDefs.ThrowIfInvalidUserVA(nameof(typeDefs));
+                const uint movOpcodeOffset = 12;
+                const uint dispOffset = movOpcodeOffset + 3;
 
-            Console.WriteLine($"Found TypeDefs @ 0x{typeDefs:X}");
-            return typeDefs;
+                int disp32 = Read<int>(sig + dispOffset);
+                ulong typeDefPtrAddr = sig.AddRVA(movOpcodeOffset + 3 + 4, disp32);
+
+                gTypeInfoDefinitionTable = Read<ulong>(typeDefPtrAddr);
+                gTypeInfoDefinitionTable.ThrowIfInvalidUserVA(nameof(gTypeInfoDefinitionTable));
+                gTypeCount = Memory.Read<int>(gTypeInfoDefinitionTable - 0x10) / 8;
+                ArgumentOutOfRangeException.ThrowIfLessThan(gTypeCount, 1, nameof(gTypeCount));
+                ArgumentOutOfRangeException.ThrowIfGreaterThan(gTypeCount, 100000, nameof(gTypeCount));
+                Console.WriteLine($"{nameof(gTypeInfoDefinitionTable)} @ 0x{gTypeInfoDefinitionTable:X} (Type Count: {gTypeCount})");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"WARNING - Unable to resolve TypeInfoDefinitionTable: {ex}");
+            }
         }
 
         [Flags]
@@ -188,7 +228,7 @@ namespace LoneEftDumper.SDK
             [FieldOffset(0x30)] public readonly int methodsOffset;
             [FieldOffset(0x34)] public readonly int methodsSize;
             [FieldOffset(0x38)] public readonly int parameterDefaultValuesOffset;
-            [FieldOffset(0x3C) ] public readonly int parameterDefaultValuesSize;
+            [FieldOffset(0x3C)] public readonly int parameterDefaultValuesSize;
             [FieldOffset(0x40)] public readonly int fieldDefaultValuesOffset;
             [FieldOffset(0x44)] public readonly int fieldDefaultValuesSize;
             [FieldOffset(0x48)] public readonly int fieldAndParameterDefaultValueDataOffset;
@@ -214,21 +254,21 @@ namespace LoneEftDumper.SDK
             [FieldOffset(0x98)] public readonly int interfaceOffsetsOffset;
             [FieldOffset(0x9C)] public readonly int interfaceOffsetsSize;
             [FieldOffset(0xA0)] public readonly int typeDefinitionsOffset;
-            [FieldOffset(0xA4) ] public readonly int typeDefinitionsSize;
+            [FieldOffset(0xA4)] public readonly int typeDefinitionsSize;
             [FieldOffset(0xA8)] public readonly int imagesOffset;
             [FieldOffset(0xAC)] public readonly int imagesSize;
             [FieldOffset(0xB0)] public readonly int assembliesOffset;
             [FieldOffset(0xB4)] public readonly int assembliesSize;
-            [FieldOffset(0xB8) ] public readonly int fieldRefsOffset;
+            [FieldOffset(0xB8)] public readonly int fieldRefsOffset;
             [FieldOffset(0xBC)] public readonly int fieldRefsSize;
-            [FieldOffset(0xC0) ] public readonly int referencedAssembliesOffset;
+            [FieldOffset(0xC0)] public readonly int referencedAssembliesOffset;
             [FieldOffset(0xC4)] public readonly int referencedAssembliesSize;
             [FieldOffset(0xC8)] public readonly int attributeDataOffset;
             [FieldOffset(0xCC)] public readonly int attributeDataSize;
             [FieldOffset(0xD0)] public readonly int attributeDataRangeOffset;
             [FieldOffset(0xD4)] public readonly int attributeDataRangeSize;
             [FieldOffset(0xD8)] public readonly int unresolvedVirtualCallParameterTypesOffset;
-            [FieldOffset(0xDC) ] public readonly int unresolvedVirtualCallParameterTypesSize;
+            [FieldOffset(0xDC)] public readonly int unresolvedVirtualCallParameterTypesSize;
             [FieldOffset(0xE0)] public readonly int unresolvedVirtualCallParameterRangesOffset;
             [FieldOffset(0xE4)] public readonly int unresolvedVirtualCallParameterRangesSize;
             [FieldOffset(0xE8)] public readonly int windowsRuntimeTypeNamesOffset;
@@ -252,14 +292,14 @@ namespace LoneEftDumper.SDK
             [FieldOffset(0x1C)] public readonly uint flags;
             [FieldOffset(0x20)] public readonly int fieldStart;
             [FieldOffset(0x24)] public readonly int methodStart;
-            [FieldOffset(0x28) ] public readonly int eventStart;
+            [FieldOffset(0x28)] public readonly int eventStart;
             [FieldOffset(0x2C)] public readonly int propertyStart;
             [FieldOffset(0x30)] public readonly int nestedTypesStart;
             [FieldOffset(0x34)] public readonly int interfacesStart;
             [FieldOffset(0x38)] public readonly int vtableStart;
             [FieldOffset(0x3C)] public readonly int interfaceOffsetsStart;
             [FieldOffset(0x40)] public readonly ushort method_count;
-            [FieldOffset(0x42) ] public readonly ushort property_count;
+            [FieldOffset(0x42)] public readonly ushort property_count;
             [FieldOffset(0x44)] public readonly ushort field_count;
             [FieldOffset(0x46)] public readonly ushort event_count;
             [FieldOffset(0x48)] public readonly ushort nested_type_count;
@@ -371,7 +411,7 @@ namespace LoneEftDumper.SDK
         {
             [FieldOffset(0x00)] public readonly ulong data;
             [FieldOffset(0x08)] public readonly ushort attrs;
-            [FieldOffset(0x0A) ] public readonly byte type;
+            [FieldOffset(0x0A)] public readonly byte type;
             [FieldOffset(0x0B)] private byte _bitfield;
 
             public byte Num_mods
@@ -422,7 +462,7 @@ namespace LoneEftDumper.SDK
                     case TypeEnum.IL2CPP_TYPE_R8: return "double";
                     case TypeEnum.IL2CPP_TYPE_STRING: return "string";
                     case TypeEnum.IL2CPP_TYPE_OBJECT: return "object";
-                        default: return "object"; // TODO: Expand type handling
+                    default: return "object"; // TODO: Expand type handling
                 }
 
                 if (typeEnum == TypeEnum.IL2CPP_TYPE_PTR ||
@@ -502,7 +542,7 @@ namespace LoneEftDumper.SDK
             [FieldOffset(0x18)] public readonly ulong name;
             [FieldOffset(0x20)] public readonly ulong klass;
             [FieldOffset(0x28)] public readonly ulong returntype;
-            [FieldOffset(0x30) ] public readonly ulong parameters;
+            [FieldOffset(0x30)] public readonly ulong parameters;
             [FieldOffset(0x38)] public readonly ulong parameter_info;
             [FieldOffset(0x40)] public readonly uint token;
             [FieldOffset(0x44)] public readonly ushort flags;
@@ -889,6 +929,17 @@ namespace LoneEftDumper.SDK
                 return Read<Class>(classPtr);
             }
 
+            public IReadOnlyList<Class> GetAllClasses()
+            {
+                var klasses = new List<Class>((int)type_count);
+                for (int i = 0; i < type_count; i++)
+                {
+                    var klass = GetClass(i);
+                    klasses.Add(klass);
+                }
+                return klasses;
+            }
+
             public Class FindClassByName(string class_name)
             {
                 if (type_start == 0)
@@ -920,64 +971,30 @@ namespace LoneEftDumper.SDK
         {
             [FieldOffset(0x00)] public readonly ulong image;
 
+            public static int GetAssemblyCount() => (int)((gAssembliesEnd - gAssembliesStart) / 8u);
+            public static Assembly GetAssembly(int index)
+            {
+                ulong assemblyPtrPtr = gAssembliesStart + (ulong)(index * 8);
+                ulong assemblyPtr = Read<ulong>(assemblyPtrPtr);
+                assemblyPtr.ThrowIfInvalidUserVA(nameof(assemblyPtr));
+                return Read<Assembly>(assemblyPtr);
+            }
+
+            public static IReadOnlyList<Assembly> GetAllAssemblies()
+            {
+                int count = GetAssemblyCount();
+                var assemblies = new List<Assembly>(count);
+                for (int i = 0; i < count; i++)
+                {
+                    assemblies.Add(GetAssembly(i));
+                }
+                return assemblies;
+            }
+
             public Image GetImage()
             {
                 return Read<Image>(image);
             }
         }
-
-        //// struct Domain { BYTE pad_0000[0x8]; uint64_t assemblies_start; uint64_t assemblies_end; };
-        //[StructLayout(LayoutKind.Explicit)]
-        //public readonly struct Domain
-        //{
-        //    [FieldOffset(0x08)] public readonly ulong assemblies_start;
-        //    [FieldOffset(0x10)] public readonly ulong assemblies_end;
-
-        //    public static Domain Get()
-        //    {
-        //        return Read<Domain>(0x0 + DomainOffset);
-        //    }
-
-        //    public readonly int GetAssemblyCount()
-        //    {
-        //        return (int)((assemblies_end - assemblies_start) / (ulong)sizeof(ulong));
-        //    }
-
-        //    public readonly Assembly GetAssembly(int index)
-        //    {
-        //        ulong assemblyPtr = Read<ulong>(assemblies_start + (ulong)index * (ulong)IntPtr.Size);
-        //        return Read<Assembly>(assemblyPtr);
-        //    }
-
-        //    public Image FindImageByName(string image_name)
-        //    {
-        //        if (assemblies_start == 0)
-        //            return default;
-
-        //        int assembly_count = GetAssemblyCount();
-        //        if (assembly_count <= 0)
-        //            return default;
-
-        //        for (int i = 0; i < assembly_count; i++)
-        //        {
-        //            var assembly = GetAssembly(i);
-        //            if (assembly.image == 0)
-        //                continue;
-
-        //            var image = assembly.GetImage();
-        //            if (image.name == 0)
-        //                continue;
-
-        //            var imagename = image.GetName();
-        //            if (string.IsNullOrEmpty(imagename))
-        //                continue;
-
-        //            if (imagename == image_name)
-        //                return image;
-        //        }
-
-        //        return default;
-        //    }
-        //}
     }
 }

@@ -53,7 +53,7 @@ namespace LoneEftDumper.DMA
             Console.WriteLine($"DMA Initialized. EscapeFromTarkov.exe running @ PID {pid}.");
         }
 
-        public static T Read<T>(ulong address) 
+        public static T Read<T>(ulong address)
             where T : unmanaged
         {
             return Vmm.MemReadValue<T>(PID, address);
