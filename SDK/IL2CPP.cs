@@ -1,13 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Text;
+﻿using System.Runtime.InteropServices;
 using VmmSharpEx;
 using VmmSharpEx.Extensions;
 
 namespace LoneEftDumper.SDK
 {
+    /// <summary>
+    /// IL2CPP C# SDK
+    /// </summary>
+    /// <remarks>
+    /// SDK Partially re-created from <see href="https://www.unknowncheats.me/forum/rust/703726-il2cpp-rebuilt.html"/> (Converted to C#)
+    /// </remarks>
     internal static class IL2CPP
     {
         private static int gTypeCount;
