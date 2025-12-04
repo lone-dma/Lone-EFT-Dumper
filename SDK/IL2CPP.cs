@@ -24,7 +24,7 @@ namespace LoneEftDumper.SDK
             gMetadataGlobalHeader = 0;
             gGlobalMetadata = 0;
 
-            gTypeInfoDefinitionTable = GetTypeInfoDefinitionTable(module.vaBase, module.cbImageSize);
+            gTypeInfoDefinitionTable = GetTypeInfoDefinitionTable(ref module);
             gTypeInfoDefinitionTable.ThrowIfInvalidUserVA(nameof(gTypeInfoDefinitionTable));
             gTypeCount = Memory.Read<int>(gTypeInfoDefinitionTable - 0x10) / 8;
             ArgumentOutOfRangeException.ThrowIfLessThan(gTypeCount, 1, nameof(gTypeCount));
@@ -33,22 +33,19 @@ namespace LoneEftDumper.SDK
             Console.WriteLine("IL2CPP SDK Initialized.");
         }
 
-        private static ulong GetTypeInfoDefinitionTable(ulong moduleBase, uint moduleSize)
+        private static ulong GetTypeInfoDefinitionTable(ref Vmm.ModuleEntry module)
         {
             // See: https://github.com/vmexit-invalid/il2cpp_dma_eft/blob/a37c8359a7e1bab31f282195e9595f7bbbe910fd/il2cpp_dumper_dma/src/il2cpp_dumper.cpp#L43
             // I don't think we need to loop exports though, someone correct me if i'm wrong
 
-            // 48 C1 E9 04                 ; shr rcx, 4
-            // BA 08 00 00 00              ; mov edx, 8
-            // ?? ?? ??                    ; wildcard bytes
-            // 48 89 05 ?? ?? ?? ??        ; mov [rip+disp32], rax
-            // 48 8B 05 ?? ?? ?? ??        ; mov rax, [rip+disp32]
+            // .text: 00000000004D2584                shr rcx, 4
+            // .text:00000000004D2588                 mov edx, 8
+            // .text:00000000004D258D                 call r8; loc_5A728C
+            // .text:00000000004D2590                 mov cs:qword_69F6B38, rax
+            // .text:00000000004D2597                 mov rax, cs:qword_69F68B8
             const string pattern = "48 C1 E9 04 BA 08 00 00 00 ?? ?? ?? 48 89 05 ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ??";
 
-            ulong start = moduleBase;
-            ulong end = moduleBase + moduleSize;
-
-            ulong sig = Memory.Vmm.FindSignature(PID, pattern, start, end);
+            ulong sig = Memory.Vmm.FindSignature(PID, pattern, module.vaBase, module.vaBase + module.cbImageSize);
             sig.ThrowIfInvalidUserVA(nameof(sig));
 
             const uint movOpcodeOffset = 12;
