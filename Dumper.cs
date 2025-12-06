@@ -54,18 +54,17 @@ namespace LoneEftDumper
                         }
                     }
 
-                    // Get parent type name
-                    string parentTypeName = "object";
+                    // Get Type hierarchy
+                    var parentTypes = new StringBuilder();
+                    var hierarchy = klass.GetTypeHierarchy();
                     try
                     {
-                        var typeName = klass.type.GetName();
-                        if (!string.IsNullOrEmpty(typeName))
-                            parentTypeName = typeName;
+                        foreach (var h in hierarchy)
+                        {
+                            parentTypes.Append($"{h.GetName()} : ");
+                        }
                     }
-                    catch
-                    {
-                        // Keep default "object"
-                    }
+                    catch { }
 
                     // Determine class type (Class, Struct, Interface, etc.)
                     bool isInterface = (klass.flags & (uint)IL2CPP.TypeAttributes.TYPE_ATTRIBUTE_INTERFACE) != 0;
@@ -74,9 +73,9 @@ namespace LoneEftDumper
 
                     // Build class header
                     if (!string.IsNullOrEmpty(namespaceName))
-                        sb.AppendLine($"[{classType}] {namespaceName}.{className} : {parentTypeName}");
+                        sb.AppendLine($"[{classType}] {namespaceName}.{className} :: {parentTypes.ToString()}");
                     else
-                        sb.AppendLine($"[{classType}] {className} : {parentTypeName}");
+                        sb.AppendLine($"[{classType}] {className} :: {parentTypes.ToString()}");
 
                     // Get and dump fields
                     if (klass.field_count > 0 && klass.fields != 0)

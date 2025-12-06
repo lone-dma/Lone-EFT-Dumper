@@ -741,6 +741,7 @@ namespace LoneEftDumper.SDK
             [FieldOffset(0x122)] public readonly ushort property_count;
             [FieldOffset(0x124)] public readonly ushort field_count;
             [FieldOffset(0x126)] public readonly ushort event_count;
+            [FieldOffset(0xC8)] public readonly ulong typeHierarchy;
 
             public static IReadOnlyList<Class> GetTypeTable()
             {
@@ -779,6 +780,32 @@ namespace LoneEftDumper.SDK
             {
                 ulong methodPtr = Read<ulong>(methods + (ulong)index * (ulong)IntPtr.Size);
                 return Read<MethodInfo>(methodPtr);
+            }
+
+            public IReadOnlyList<Class> GetTypeHierarchy()
+            {
+                var types = new List<Class>();
+                if (!typeHierarchy.IsValidUserVA())
+                    return types;
+                for (int i = 0; i < 32; i++) // Should never be more than 32 types in hierarchy
+                {
+                    try
+                    {
+                        ulong typePtr = Read<ulong>(typeHierarchy + (ulong)i * (ulong)IntPtr.Size);
+                        if (!typePtr.IsValidUserVA())
+                            break;
+                        var klass = Read<Class>(typePtr);
+                        var name = klass.GetName();
+                        if (i > 0 && name == "Object") // For some reason Object shows up multiple times
+                            continue;
+                        if (name.Any(c => c > 127 || c < 32)) // Ghetto need to replace this, but filters out garbage
+                            continue;
+                        types.Add(klass);
+                    }
+                    catch { }
+                }
+                types.Reverse(); // Object at end
+                return types;
             }
 
             public readonly string GetModifer()
