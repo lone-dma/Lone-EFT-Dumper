@@ -746,8 +746,7 @@ namespace LoneEftDumper.SDK
 
             public static IReadOnlyList<Class> GetTypeTable()
             {
-                var ptrs = new ulong[gTypeCount];
-                if (!Memory.Read(gTypeInfoDefinitionTable, ptrs))
+                var ptrs = Read<ulong>(gTypeInfoDefinitionTable, gTypeCount) ??
                     throw new InvalidOperationException("Failed to read type definition table.");
                 var klasses = new List<Class>(gTypeCount);
                 foreach (var ptr in ptrs)
