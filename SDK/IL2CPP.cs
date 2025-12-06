@@ -805,7 +805,7 @@ namespace LoneEftDumper.SDK
                     catch { }
                 }
                 types.Reverse(); // Object at end
-                return types;
+                return types.Distinct().ToList();
             }
 
             public readonly string GetModifer()

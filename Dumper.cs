@@ -61,7 +61,15 @@ namespace LoneEftDumper
                     {
                         foreach (var h in hierarchy)
                         {
-                            parentTypes.Append($"{h.GetName()} : ");
+                            var ns = h.GetNamespace();
+                            if (!string.IsNullOrEmpty(ns))
+                            {
+                                parentTypes.Append($"{ns}.{h.GetName()} : ");
+                            }
+                            else
+                            {
+                                parentTypes.Append($"{h.GetName()} : ");
+                            }
                         }
                     }
                     catch { }
