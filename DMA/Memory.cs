@@ -81,5 +81,10 @@ namespace LoneEftDumper.DMA
             }
             return Cache<string>.Dict[address] = Vmm.MemReadString(PID, address, length, Encoding.ASCII);
         }
+
+        private static class Cache<T>
+        {
+            public static readonly Dictionary<ulong, T> Dict = new();
+        }
     }
 }
