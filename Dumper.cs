@@ -18,61 +18,14 @@ namespace LoneEftDumper
             Console.WriteLine($"Found {klasses.Count} classes. Processing...");
 
             int processedCount = 0;
-            int skippedEmptyName = 0;
             int skippedExceptions = 0;
 
             foreach (var klass in klasses)
             {
                 try
                 {
-                    // Check if class pointer is valid
-                    if (klass.name == 0)
-                    {
-                        skippedEmptyName++;
-                        continue;
-                    }
-
-                    // Get class name
-                    string className = klass.GetName();
-                    if (string.IsNullOrEmpty(className))
-                    {
-                        skippedEmptyName++;
-                        continue;
-                    }
-
-                    // Get namespace (can be empty)
-                    string namespaceName = string.Empty;
-                    if (klass.namespaze != 0)
-                    {
-                        try
-                        {
-                            namespaceName = klass.GetNamespace();
-                        }
-                        catch
-                        {
-                            // Namespace read failed, continue without it
-                        }
-                    }
-
-                    // Get Type hierarchy
-                    var parentTypes = new StringBuilder();
-                    var hierarchy = klass.GetTypeHierarchy();
-                    try
-                    {
-                        foreach (var h in hierarchy)
-                        {
-                            var ns = h.GetNamespace();
-                            if (!string.IsNullOrEmpty(ns))
-                            {
-                                parentTypes.Append($"{ns}.{h.GetName()} : ");
-                            }
-                            else
-                            {
-                                parentTypes.Append($"{h.GetName()} : ");
-                            }
-                        }
-                    }
-                    catch { }
+                    // Get Parent Type
+                    var parentType = klass.GetParent()?.ToString() ?? "System.Object";
 
                     // Determine class type (Class, Struct, Interface, etc.)
                     bool isInterface = (klass.flags & (uint)IL2CPP.TypeAttributes.TYPE_ATTRIBUTE_INTERFACE) != 0;
@@ -80,10 +33,7 @@ namespace LoneEftDumper
                     string classType = isInterface ? "Interface" : (isValueType ? "Struct" : "Class");
 
                     // Build class header
-                    if (!string.IsNullOrEmpty(namespaceName))
-                        sb.AppendLine($"[{classType}] {namespaceName}.{className} :: {parentTypes.ToString()}");
-                    else
-                        sb.AppendLine($"[{classType}] {className} :: {parentTypes.ToString()}");
+                    sb.AppendLine($"[{classType}] {klass.ToString()} : {parentType}");
 
                     // Get and dump fields
                     if (klass.field_count > 0 && klass.fields != 0)
@@ -153,7 +103,6 @@ namespace LoneEftDumper
             File.WriteAllText(outputPath, sb.ToString());
             Console.WriteLine($"\nDump complete!");
             Console.WriteLine($"  - Processed: {processedCount} classes");
-            Console.WriteLine($"  - Skipped (empty name): {skippedEmptyName}");
             Console.WriteLine($"  - Skipped (exceptions): {skippedExceptions}");
             Console.WriteLine($"  - Total: {klasses.Count}");
             Console.WriteLine($"  - Output: {outputPath}");

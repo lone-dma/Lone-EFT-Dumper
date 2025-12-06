@@ -8,6 +8,7 @@ namespace LoneEftDumper.DMA
     internal static class Memory
     {
         private const string MMAP_FILE = "mmap.txt";
+        private static readonly Dictionary<ulong, string> _stringCache = new();
         /// <summary>
         /// Backing VMM instance.
         /// </summary>
@@ -65,6 +66,13 @@ namespace LoneEftDumper.DMA
             return Vmm.MemReadSpan(PID, address, span);
         }
 
-        public static string ReadString(ulong address, int length = 128) => Vmm.MemReadString(PID, address, length, Encoding.ASCII);
+        public static string ReadString(ulong address, int length = 128)
+        {
+            if (_stringCache.TryGetValue(address, out string cachedString))
+            {
+                return cachedString;
+            }
+            return _stringCache[address] = Vmm.MemReadString(PID, address, length, Encoding.ASCII);
+        }
     }
 }
